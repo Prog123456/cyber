@@ -233,5 +233,328 @@ encoder_reconstructed.save('/content/drive/My Drive/SAC10495/encoder_reconstruct
 
 X_train.shape[1]
 
-model.summary()
+import keras
+from keras.layers import Conv2D, Input, concatenate
+from keras.layers import LeakyReLU, MaxPooling2D, BatchNormalization,GlobalAveragePooling2D
+from keras.models import Model
+from keras.activations import softmax
+from functools import partial
 
+from keras.layers import Input, Conv2D, LeakyReLU, BatchNormalization, MaxPooling2D, GlobalAveragePooling2D, Lambda
+from keras.models import Model
+from keras.activations import softmax
+from functools import partial
+
+new_conv = partial(Conv2D, padding="same")
+
+def _base_block(out, x):
+    "(3,3), Leaky, Batch"
+    x = new_conv(out, (3,3))(x)
+    x = LeakyReLU(alpha=0.1)(x)
+    x = BatchNormalization()(x)
+    return x
+
+def _block_1(out, x):
+    """
+    output follows:
+    out//2, out
+    """
+    x = new_conv(out//2, (1,1))(x)
+    x = LeakyReLU(alpha=0.1)(x)
+    x = BatchNormalization()(x)
+    x = _base_block(out, x)
+    return x
+
+def _block_2(out, x):
+    """
+    output follows:
+    out, out//2, out
+    """
+    x = _base_block(out, x)
+    x = _block_1(out, x)
+    return x
+
+def Darknet19():
+    input_layer = Input((img_size, img_size, 3))  # Adjusted input shape
+    x = _base_block(32, input_layer)
+    x = _base_block(64, x)
+    x = _block_2(128, x)
+    x = _block_2(256, x)
+    x = _block_2(512, x)
+    x = _block_1(512, x)
+    x = _block_2(1024, x)
+    x = _block_1(512, x)
+    x = new_conv(1, (1,1), activation="linear")(x)
+    model = Model(inputs=input_layer, outputs=x)
+    return model
+
+def apply_soft(x):
+    output = softmax(x)
+    return output
+
+def Darknet_classifier():
+    base_model = Darknet19()
+    x = base_model.output
+    x = GlobalAveragePooling2D()(x)
+    output = Lambda(apply_soft)(x)
+    model = Model(inputs=base_model.inputs, outputs=output)
+    return model
+
+img_size = X_train.shape[1]
+darknet_model = Darknet_classifier()
+print(darknet_model.summary())
+
+print('Input layer of X_train.shape[1]:',X_train.shape[1])
+
+#plot the darknet19 model
+# Generate the plot
+plot_model(Darknet_classifier(), to_file='darknet_classifier_plot.png', show_shapes=True, show_layer_names=True)
+
+print(X_train.shape)
+
+from keras.layers import Input, Dense, LeakyReLU, BatchNormalization
+from keras.models import Model
+import numpy as np
+
+def create_darknet_model(input_shape):
+    input_layer = Input(shape=input_shape)
+    x = Dense(32)(input_layer)
+    x = LeakyReLU(alpha=0.1)(x)
+    x = BatchNormalization()(x)
+    x = Dense(64)(x)
+    x = LeakyReLU(alpha=0.1)(x)
+    x = BatchNormalization()(x)
+    x = Dense(128)(x)
+    x = LeakyReLU(alpha=0.1)(x)
+    x = BatchNormalization()(x)
+    x = Dense(256)(x)
+    x = LeakyReLU(alpha=0.1)(x)
+    x = BatchNormalization()(x)
+    x = Dense(512)(x)
+    x = LeakyReLU(alpha=0.1)(x)
+    x = BatchNormalization()(x)
+    x = Dense(512)(x)
+    x = LeakyReLU(alpha=0.1)(x)
+    x = BatchNormalization()(x)
+    x = Dense(1024)(x)
+    x = LeakyReLU(alpha=0.1)(x)
+    x = BatchNormalization()(x)
+    x = Dense(512)(x)
+    x = LeakyReLU(alpha=0.1)(x)
+    x = BatchNormalization()(x)
+    output = Dense(6, activation='linear')(x)  # Adjust output shape if needed
+    model = Model(inputs=input_layer, outputs=output)
+    return model
+
+
+
+input_shape = X_train.shape[1]
+darknet_model = create_darknet_model(input_shape)
+
+# Compile the model
+darknet_model.compile(optimizer='adam', loss='mean_squared_error', metrics=['accuracy'])
+
+# Train the model
+darknet_history = darknet_model.fit(X_train, X_train, epochs=1000, batch_size=32, verbose=2, validation_data=(X_test, X_test))
+
+# Get the training history
+loss = darknet_history.history['loss']
+val_loss = darknet_history.history['val_loss']
+
+# Plot the training and validation loss
+plt.plot(loss, label='Training Loss',color='blue')
+plt.plot(val_loss, label='Validation Loss',color='red')
+plt.xlabel('Epochs',fontweight='bold')
+plt.ylabel('Loss',fontweight='bold')
+plt.title('Training and Validation Loss for Darknet19 Model',fontweight='bold')
+plt.legend()
+plt.show()
+
+import matplotlib.pyplot as plt
+
+
+
+# Plot the training loss
+plt.figure(figsize=(6, 5))
+plt.plot(history.history['loss'], label='VAE Training Loss', color='blue')
+plt.plot(darknet_history.history['loss'], label='Darknet Training Loss', color='red')
+plt.xlabel('Epochs',fontweight='bold')
+plt.ylabel('Loss',fontweight='bold')
+plt.title('Training Loss Comparison of two Feature Extraction Models',fontweight='bold')
+plt.legend()
+plt.show()
+
+# Plot the validation loss
+plt.figure(figsize=(6, 5))
+plt.plot(history.history['val_loss'], label='VAE Validation Loss', color='blue')
+plt.plot(darknet_history.history['val_loss'], label='Darknet Validation Loss', color='red')
+plt.xlabel('Epochs',fontweight='bold')
+plt.ylabel('Loss',fontweight='bold')
+plt.title('Validation Loss Comparison of two Feature Extraction Models',fontweight='bold')
+plt.legend()
+plt.show()
+
+import matplotlib.pyplot as plt
+
+# Define grid line style
+grid_style = {
+    'color': 'gray',
+    'linestyle': '--',
+    'linewidth': 0.5,
+    'alpha': 0.7
+}
+
+# Plot the training loss as scatter plot with reduced point size
+plt.figure(figsize=(6, 5))
+plt.scatter(range(len(history.history['loss'])), history.history['loss'], label='VAE Training Loss', color='blue', s=5)
+plt.scatter(range(len(darknet_history.history['loss'])), darknet_history.history['loss'], label='Darknet Training Loss', color='red', s=5)
+plt.xlabel('Epochs', fontweight='bold')
+plt.ylabel('Loss', fontweight='bold')
+plt.title('Training Loss Comparison of two Feature Extraction Models', fontweight='bold')
+plt.legend()
+plt.grid(True, **grid_style)  # Add styled grid lines
+plt.show()
+
+# Plot the validation loss as scatter plot with reduced point size
+plt.figure(figsize=(6, 5))
+plt.scatter(range(len(history.history['val_loss'])), history.history['val_loss'], label='VAE Validation Loss', color='blue', s=5)
+plt.scatter(range(len(darknet_history.history['val_loss'])), darknet_history.history['val_loss'], label='Darknet Validation Loss', color='red', s=5)
+plt.xlabel('Epochs', fontweight='bold')
+plt.ylabel('Loss', fontweight='bold')
+plt.title('Validation Loss Comparison of two Feature Extraction Models', fontweight='bold')
+plt.legend()
+plt.grid(True, **grid_style)  # Add styled grid lines
+plt.show()
+
+# Define the data for the pie charts
+vae_train_loss = sum(history.history['loss'])
+vae_val_loss = sum(history.history['val_loss'])
+
+darknet_train_loss = sum(darknet_history.history['loss'])
+darknet_val_loss = sum(darknet_history.history['val_loss'])
+
+vae_data = [vae_train_loss, vae_val_loss]
+darknet_data = [darknet_train_loss, darknet_val_loss]
+
+# Labels for the sections
+labels = ['Training Loss', 'Validation Loss']
+
+# Colors for the sections
+colors = ['blue', 'orange']
+
+# Plot pie chart for VAE
+plt.figure(figsize=(5, 5))
+plt.pie(vae_data, labels=labels, autopct='%1.1f%%', colors=colors, startangle=140)
+plt.title('VAE Loss Distribution', fontweight='bold')
+plt.show()
+
+# Plot pie chart for Darknet
+plt.figure(figsize=(5, 5))
+plt.pie(darknet_data, labels=labels, autopct='%1.1f%%', colors=colors, startangle=140)
+plt.title('Darknet Loss Distribution', fontweight='bold')
+plt.show()
+
+# save the encoder model to drive
+darknet_model.save('/content/drive/My Drive/SAC10495/darknet_model.h5')
+
+#@title Transformer Based Deep Belief Network
+import tensorflow as tf
+from tensorflow.keras.layers import Dense, LayerNormalization, MultiHeadAttention, Embedding, GlobalAveragePooling1D
+
+class MultiHeadAttentionLayer(tf.keras.layers.Layer):
+    def __init__(self, embed_dim, num_heads):
+        super(MultiHeadAttentionLayer, self).__init__()
+        self.num_heads = num_heads
+        self.attention = MultiHeadAttention(
+            key_dim=embed_dim // num_heads,
+            num_heads=num_heads,
+            dropout=0.1
+        )
+        self.norm1 = LayerNormalization(epsilon=1e-6)
+
+    def call(self, inputs):
+        x = self.attention(inputs, inputs)
+        x = self.norm1(x + inputs)
+        return x
+
+class TransformerBlock(tf.keras.layers.Layer):
+    def __init__(self, embed_dim, num_heads, ff_dim, rate=0.1):
+        super(TransformerBlock, self).__init__()
+        self.att = MultiHeadAttentionLayer(embed_dim, num_heads)
+        self.ffn = tf.keras.Sequential([
+            Dense(ff_dim, activation='relu'),
+            Dense(embed_dim),
+        ])
+        self.norm1 = LayerNormalization(epsilon=1e-6)
+        self.norm2 = LayerNormalization(epsilon=1e-6)
+        self.dropout1 = tf.keras.layers.Dropout(rate)
+        self.dropout2 = tf.keras.layers.Dropout(rate)
+
+    def call(self, inputs):
+        x = self.norm1(inputs)
+        x = self.att(x)
+        x = self.dropout1(x)
+        x = self.norm2(x + inputs)
+        x = self.ffn(x)
+        x = self.dropout2(x)
+        x = self.norm2(x + x)
+        return x
+
+class DBN(tf.keras.Model):
+    def __init__(self, num_transformer_blocks, embed_dim, num_heads, ff_dim, num_classes, mlp_units, dropout=0.1):
+        super(DBN, self).__init__()
+        self.embedding = Embedding(input_dim=num_classes, output_dim=embed_dim)
+        self.transformer_blocks = [TransformerBlock(embed_dim, num_heads, ff_dim, dropout) for _ in range(num_transformer_blocks)]
+        self.pooling = GlobalAveragePooling1D()
+        self.mlp = tf.keras.Sequential([
+            Dense(unit, activation='relu') for unit in mlp_units
+        ])
+        self.classifier = Dense(num_classes, activation='softmax')
+
+    def call(self, inputs):
+        x = self.embedding(inputs)
+        for transformer_block in self.transformer_blocks:
+            x = transformer_block(x)
+        x = self.pooling(x)
+        x = self.mlp(x)
+        x = self.classifier(x)
+        return x
+
+import tensorflow as tf
+
+class CombinedModel(tf.keras.Model):
+    def __init__(self, vae_model, darknet_model, dbn_model):
+        super(CombinedModel, self).__init__()
+        self.vae_model = vae_model
+        self.darknet_model = darknet_model
+        self.dbn_model = dbn_model
+
+    def call(self, inputs):
+        # Assuming 'inputs' is the input data for your problem
+
+        # Pass inputs through VAE
+        vae_output = self.vae_model(inputs)
+
+        # Pass inputs through Darknet-19
+        darknet_output = self.darknet_model(inputs)
+
+        # Pass inputs through DBN
+        dbn_output = self.dbn_model(inputs)
+
+        # Combine the outputs in a way that makes sense for your problem
+        # For example, you could concatenate, sum, or perform some other operation
+
+        # Example: Concatenate outputs
+        combined_output = tf.concat([vae_output, darknet_output, dbn_output], axis=-1)
+
+        # You might want to add additional layers or processing here
+
+        # Return the final output
+        return combined_output
+
+vae_model= encoder_reconstructed
+
+
+
+combined_model = CombinedModel(vae_model, darknet_model, dbn_model)
+combined_model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
